@@ -19,6 +19,16 @@ p <- (ggplot(df, aes(x=date, y=close)) +
 filename <- "s&p500_close.png"
 ggsave(filename, plot=p, width=10, height=8)
 
+p <- (ggplot(df, aes(x=date, y=log(close))) +
+      geom_line() +
+      ylab("log closing price") +
+      scale_x_date("", date_labels="%b %Y", breaks="4 years") +
+      theme_bw() +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      ggtitle("S&P 500"))
+filename <- "s&p500_log_close.png"
+ggsave(filename, plot=p, width=10, height=8)
+
 p <- (ggplot(df, aes(x=date, y=log_return)) +
       geom_point(alpha=0.5) +
       ylab("log returns (close-to-close)") +
