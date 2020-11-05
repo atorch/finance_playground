@@ -2,7 +2,9 @@ library(ggplot2)
 library(mixtools)
 library(quantmod)
 
-sp500 <- getSymbols("^GSPC", auto.assign=FALSE, from="1970-01-01")
+starting_date <- as.Date("1970-01-01")
+
+sp500 <- getSymbols("^GSPC", auto.assign=FALSE, from=starting_date)
 
 df <- data.frame(date=as.Date(index(sp500)),
                  volume=as.numeric(sp500$GSPC.Volume),
@@ -10,7 +12,7 @@ df <- data.frame(date=as.Date(index(sp500)),
 
 df$log_return <- c(NA, diff(log(df$close)))
 
-breaks = seq.Date(as.Date("1970-01-01"), as.Date("2020-01-01"), by="5 years")
+breaks = seq.Date(starting_date, as.Date("2020-01-01"), by="5 years")
 
 p <- (ggplot(df, aes(x=date, y=close)) +
       geom_line() +
@@ -51,16 +53,29 @@ test <- df[df$date >= cutoff_date, ]
 train_mean <- mean(train$log_return, na.rm=TRUE)
 train_var <- var(train$log_return, na.rm=TRUE)
 
-normal_mixture_two_components <- normalmixEM(tail(train$log_return, nrow(train) - 1), k=2)
-normal_mixture_three_components <- normalmixEM(tail(train$log_return, nrow(train) - 1), k=3)
-
-## TODO Try some other vanilla models: iid student's t, mixture of normals, HMM, etc etc
+## TODO Try some other vanilla models: iid student's t, HMM, etc etc
 log_likelihood_iid_normal <- mean(dnorm(test$log_return, mean=train_mean, sd=sqrt(train_var), log=TRUE))
 
 mixture_log_likelihood <- function(x, mixture) {
+    ## The input x is a scalar, and the mixture is an object returned by normalmixEM
     return(log(sum(mixture$lambda * dnorm(x, mean=mixture$mu, sd=mixture$sigma))))
 }
 
-log_likelihood_mixture_two_components <- mean(sapply(test$log_return, mixture_log_likelihood, mixture=normal_mixture_two_components))
-log_likelihood_mixture_three_components <- mean(sapply(test$log_return, mixture_log_likelihood, mixture=normal_mixture_three_components))
+get_mixture_test_set_log_likelihood <- function(n_components) {
+    normal_mixture <- normalmixEM(tail(train$log_return, nrow(train) - 1), maxit=10000, k=n_components)
+    return(mean(sapply(test$log_return, mixture_log_likelihood, mixture=normal_mixture)))
+}
 
+mixture_n_components <- seq(2, 5)
+mixture_likelihoods <- sapply(mixture_n_components, get_mixture_test_set_log_likelihood)
+
+log_likelihoods <- rbind(data.frame(model="i.i.d. Normal", likelihood=log_likelihood_iid_normal),
+                         data.frame(model=sprintf("i.i.d. Normal Mixture (%s components)", mixture_n_components), likelihood=mixture_likelihoods))
+
+p <- (ggplot(log_likelihoods, aes(y=model, x=likelihood)) +
+      geom_point() +
+      theme_bw() +
+      xlab(sprintf("test set (%s to present) log likelihood", cutoff_date)) +
+      ylab(""))
+filename <- "test_set_log_likelihood.png"
+ggsave(filename, plot=p, width=10, height=8)
