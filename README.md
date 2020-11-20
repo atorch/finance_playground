@@ -12,3 +12,7 @@ source("explore.R")
 ![S&P 500 Log Close](s&p500_log_close.png)
 
 ![S&P 500 Log Returns](s&p500_log_return.png)
+
+![Test Set Log Likelihoods](test_set_log_likelihood.png)
+
+![Test Set Histogram & Model Densities](test_set_log_returns_histogram_and_model_densities.png)
