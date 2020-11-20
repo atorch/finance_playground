@@ -80,17 +80,26 @@ p <- (ggplot(log_likelihoods, aes(y=model, x=likelihood)) +
       geom_point() +
       theme_bw() +
       xlab(sprintf("test set (%s to present) log likelihood", cutoff_date)) +
-      ylab(""))
+      ylab("") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      ggtitle("Test Set Log Likelihoods"))
 filename <- "test_set_log_likelihood.png"
 ggsave(filename, plot=p, width=10, height=8)
 
 mixture_density_vectorized <- Vectorize(mixture_density, vectorize.args="x")
 
 ## Histogram of test set log returns alongside model densities estimated from the _training_ set
+## TODO Needs a legend for the functions
 p <- (ggplot(test, aes(x=log_return)) +
       geom_histogram(aes(y=..density..), binwidth=0.001, color="grey", fill="white") +
-      geom_function(fun=dnorm, color="#5ab4ac", n=1000, args=list(mean=train_mean, sd=sqrt(train_var))) +
+      geom_function(fun=dnorm, color="#5ab4ac", n=1000, args=list(mean=train_mean, sd=sqrt(train_var)), linetype=2) +
       geom_function(fun=mixture_density_vectorized, color="black", n=1000, args=list(mixture=mixture_models[[1]])) +
-      theme_bw())
+      geom_function(fun=mixture_density_vectorized, color="#d7191c", n=1000, args=list(mixture=mixture_models[[2]])) +
+      geom_function(fun=mixture_density_vectorized, color="#a6611a", n=1000, args=list(mixture=mixture_models[[3]])) +
+      theme_bw() +
+      xlab("log return") +
+      ylab("probability density") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      ggtitle("Test Set Log Return Histogram & Model Densities"))
 filename <- "test_set_log_returns_histogram_and_model_densities.png"
 ggsave(filename, plot=p, width=10, height=8)
