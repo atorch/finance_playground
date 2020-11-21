@@ -89,13 +89,17 @@ ggsave(filename, plot=p, width=10, height=8)
 mixture_density_vectorized <- Vectorize(mixture_density, vectorize.args="x")
 
 ## Histogram of test set log returns alongside model densities estimated from the _training_ set
-## TODO Needs a legend for the functions
+mixture_names <- sprintf("Gaussian Mixture (%s components)", mixture_n_components)
+color_values <- c("#5ab4ac", "black", "#ca0020")
+linetype_values <- c(2, 1, 1)
+names(color_values) <- names(linetype_values) <- c("Gaussian", mixture_names[1], mixture_names[3])
 p <- (ggplot(test, aes(x=log_return)) +
       geom_histogram(aes(y=..density..), binwidth=0.001, color="grey", fill="white") +
-      geom_function(fun=dnorm, color="#5ab4ac", n=1000, args=list(mean=train_mean, sd=sqrt(train_var)), linetype=2) +
-      geom_function(fun=mixture_density_vectorized, color="black", n=1000, args=list(mixture=mixture_models[[1]])) +
-      geom_function(fun=mixture_density_vectorized, color="#d7191c", n=1000, args=list(mixture=mixture_models[[2]])) +
-      geom_function(fun=mixture_density_vectorized, color="#a6611a", n=1000, args=list(mixture=mixture_models[[3]])) +
+      geom_function(aes(colour="Gaussian"), fun=dnorm, n=1000, args=list(mean=train_mean, sd=sqrt(train_var)), linetype=2) +
+      geom_function(aes(colour=mixture_names[1]), fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[1]])) +
+      geom_function(aes(colour=mixture_names[3]), fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[3]])) +
+      scale_color_manual("Model", values=color_values) +
+      scale_linetype_manual("Model", values=linetype_values) +
       theme_bw() +
       xlab("log return") +
       ylab("probability density") +
