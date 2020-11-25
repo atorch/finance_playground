@@ -69,12 +69,28 @@ get_mixture_test_set_log_likelihood <- function(mixture_model) {
     return(mean(sapply(test$log_return, mixture_log_likelihood, mixture=mixture_model)))
 }
 
+## TODO Estimate by EM?  Multiple starting values for optimization?
+log_likelihood_students_t <- function(params, dataframe=train) {
+    ## Log likelihood for iid Student's t
+    ## (scaled and shifted as in https://www.mathworks.com/help/stats/t-location-scale-distribution.html)
+    params <- as.list(params)
+    return(mean(dt((dataframe$log_return - params$location) / params$scale, df=params$degrees_freedom, log=TRUE) -
+                log(params$scale), na.rm=TRUE))
+}
+
+optim_results <- optim(par=c(location=0, scale=0.1, degrees_freedom=10),
+                       lower=c(-Inf, 0.001, 4),
+                       fn=log_likelihood_students_t, method="L-BFGS-B", control=list(fnscale=-1, trace=1, maxit=100), hessian=TRUE)
+
+students_t_params <- optim_results$par
+
 mixture_n_components <- seq(2, 5)
 mixture_models <- lapply(mixture_n_components, function(n_components) normalmixEM(tail(train$log_return, nrow(train) - 1), maxit=10000, k=n_components))
 mixture_likelihoods <- sapply(mixture_models, get_mixture_test_set_log_likelihood)
 
-log_likelihoods <- rbind(data.frame(model="i.i.d. Normal", likelihood=log_likelihood_iid_normal),
-                         data.frame(model=sprintf("i.i.d. Normal Mixture (%s components)", mixture_n_components), likelihood=mixture_likelihoods))
+log_likelihoods <- rbind(data.frame(model="i.i.d. Gaussian", likelihood=log_likelihood_iid_normal),
+                         data.frame(model=sprintf("i.i.d. Gaussian Mixture (%s components)", mixture_n_components), likelihood=mixture_likelihoods),
+                         data.frame(model="i.i.d. Student's t", likelihood=log_likelihood_students_t(students_t_params, dataframe=test)))
 
 p <- (ggplot(log_likelihoods, aes(y=model, x=likelihood)) +
       geom_point() +
@@ -91,13 +107,16 @@ mixture_density_vectorized <- Vectorize(mixture_density, vectorize.args="x")
 ## Histogram of test set log returns alongside model densities estimated from the _training_ set
 mixture_names <- sprintf("Gaussian Mixture (%s components)", mixture_n_components)
 color_values <- c("#5ab4ac", "black", "#ca0020")
-linetype_values <- c(2, 1, 1)
+linetype_values <- c(2, 1, 2)
 names(color_values) <- names(linetype_values) <- c("Gaussian", mixture_names[1], mixture_names[3])
 p <- (ggplot(test, aes(x=log_return)) +
       geom_histogram(aes(y=..density..), binwidth=0.001, color="grey", fill="white") +
-      geom_function(aes(colour="Gaussian"), fun=dnorm, n=1000, args=list(mean=train_mean, sd=sqrt(train_var)), linetype=2) +
-      geom_function(aes(colour=mixture_names[1]), fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[1]])) +
-      geom_function(aes(colour=mixture_names[3]), fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[3]])) +
+      geom_function(aes(colour="Gaussian", linetype="Gaussian"),
+                    fun=dnorm, n=1000, args=list(mean=train_mean, sd=sqrt(train_var))) +
+      geom_function(aes(colour=mixture_names[1], linetype=mixture_names[1]),
+                    fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[1]])) +
+      geom_function(aes(colour=mixture_names[3], linetype=mixture_names[3]),
+                    fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[3]])) +
       scale_color_manual("Model", values=color_values) +
       scale_linetype_manual("Model", values=linetype_values) +
       theme_bw() +
