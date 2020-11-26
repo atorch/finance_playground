@@ -16,3 +16,5 @@ source("explore.R")
 ![Test Set Log Likelihoods](test_set_log_likelihood.png)
 
 ![Test Set Histogram & Model Densities](test_set_log_returns_histogram_and_model_densities.png)
+
+![Log Densities](model_log_densities.png)

@@ -69,11 +69,22 @@ get_mixture_test_set_log_likelihood <- function(mixture_model) {
     return(mean(sapply(test$log_return, mixture_log_likelihood, mixture=mixture_model)))
 }
 
+students_t_density <- function(x, params) {
+    params <- as.list(params)
+    return(dt((x - params$location) / params$scale, df=params$degrees_freedom) / params$scale)
+}
+
+students_t_log_density <- function(x, params) {
+    params <- as.list(params)
+    return(dt((x - params$location) / params$scale, df=params$degrees_freedom, log=TRUE) - log(params$scale))
+}
+
 ## TODO Estimate by EM?  Multiple starting values for optimization?
 log_likelihood_students_t <- function(params, dataframe=train) {
     ## Log likelihood for iid Student's t
     ## (scaled and shifted as in https://www.mathworks.com/help/stats/t-location-scale-distribution.html)
     params <- as.list(params)
+    ## TODO Use student's t log density here
     return(mean(dt((dataframe$log_return - params$location) / params$scale, df=params$degrees_freedom, log=TRUE) -
                 log(params$scale), na.rm=TRUE))
 }
@@ -103,12 +114,13 @@ filename <- "test_set_log_likelihood.png"
 ggsave(filename, plot=p, width=10, height=8)
 
 mixture_density_vectorized <- Vectorize(mixture_density, vectorize.args="x")
+mixture_log_density_vectorized <- Vectorize(mixture_log_likelihood, vectorize.args="x")
 
 ## Histogram of test set log returns alongside model densities estimated from the _training_ set
 mixture_names <- sprintf("Gaussian Mixture (%s components)", mixture_n_components)
-color_values <- c("#5ab4ac", "black", "#ca0020")
-linetype_values <- c(2, 1, 2)
-names(color_values) <- names(linetype_values) <- c("Gaussian", mixture_names[1], mixture_names[3])
+color_values <- c("#5ab4ac", "black", "#ca0020", "#bcbddc")
+linetype_values <- c(2, 1, 1, 3)
+names(color_values) <- names(linetype_values) <- c("Gaussian", mixture_names[1], mixture_names[3], "Student's t")
 p <- (ggplot(test, aes(x=log_return)) +
       geom_histogram(aes(y=..density..), binwidth=0.001, color="grey", fill="white") +
       geom_function(aes(colour="Gaussian", linetype="Gaussian"),
@@ -117,6 +129,8 @@ p <- (ggplot(test, aes(x=log_return)) +
                     fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[1]])) +
       geom_function(aes(colour=mixture_names[3], linetype=mixture_names[3]),
                     fun=mixture_density_vectorized, n=1000, args=list(mixture=mixture_models[[3]])) +
+      geom_function(aes(color="Student's t", linetype="Student's t"),
+                    fun=students_t_density, n=1000, args=list(params=students_t_params)) +
       scale_color_manual("Model", values=color_values) +
       scale_linetype_manual("Model", values=linetype_values) +
       theme_bw() +
@@ -126,3 +140,24 @@ p <- (ggplot(test, aes(x=log_return)) +
       ggtitle("Test Set Log Return Histogram & Model Densities"))
 filename <- "test_set_log_returns_histogram_and_model_densities.png"
 ggsave(filename, plot=p, width=10, height=8)
+
+p <- (ggplot(test, aes(x=log_return)) +
+      geom_function(aes(colour="Gaussian", linetype="Gaussian"),
+                    fun=dnorm, n=1000, args=list(mean=train_mean, sd=sqrt(train_var), log=TRUE)) +
+      geom_function(aes(colour=mixture_names[1], linetype=mixture_names[1]),
+                    fun=mixture_log_density_vectorized, n=1000, args=list(mixture=mixture_models[[1]])) +
+      geom_function(aes(colour=mixture_names[3], linetype=mixture_names[3]),
+                    fun=mixture_log_density_vectorized, n=1000, args=list(mixture=mixture_models[[3]])) +
+      geom_function(aes(color="Student's t", linetype="Student's t"),
+                    fun=students_t_log_density, n=1000, args=list(params=students_t_params)) +
+      scale_color_manual("Model", values=color_values) +
+      scale_linetype_manual("Model", values=linetype_values) +
+      xlim(c(-0.2, 0.2)) +
+      theme_bw() +
+      xlab("log return") +
+      ylab("log of probability density") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      ggtitle("Model Log Densities"))
+filename <- "model_log_densities.png"
+ggsave(filename, plot=p, width=10, height=8)
+
