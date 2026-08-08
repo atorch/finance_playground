@@ -12,7 +12,7 @@ df <- data.frame(date=as.Date(index(sp500)),
 
 df$log_return <- c(NA, diff(log(df$close)))
 
-breaks = seq.Date(starting_date, as.Date("2020-01-01"), by="5 years")
+breaks = seq.Date(starting_date, as.Date("2026-01-01"), by="5 years")
 
 p <- (ggplot(df, aes(x=date, y=close)) +
       geom_line() +
@@ -83,10 +83,7 @@ students_t_log_density <- function(x, params) {
 log_likelihood_students_t <- function(params, dataframe=train) {
     ## Log likelihood for iid Student's t
     ## (scaled and shifted as in https://www.mathworks.com/help/stats/t-location-scale-distribution.html)
-    params <- as.list(params)
-    ## TODO Use student's t log density here
-    return(mean(dt((dataframe$log_return - params$location) / params$scale, df=params$degrees_freedom, log=TRUE) -
-                log(params$scale), na.rm=TRUE))
+    return(mean(students_t_log_density(dataframe$log_return, params), na.rm=TRUE))
 }
 
 optim_results <- optim(par=c(location=0, scale=0.1, degrees_freedom=10),
