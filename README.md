@@ -18,3 +18,6 @@ source("explore.R")
 ![Test Set Histogram & Model Densities](test_set_log_returns_histogram_and_model_densities.png)
 
 ![Log Densities](model_log_densities.png)
+
+"There are called Yosemite mountains, right? These mountains are called Yosemite. This is what we climbed and then we went down down down."
+-- Julien looking at the log S&P 500 plot, pointing at the peaks around 2000 and 2008.
