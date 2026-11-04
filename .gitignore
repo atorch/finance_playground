@@ -42,3 +42,6 @@ vignettes/*.pdf
 *#
 
 *backup.png
+
+# Discrete-emission HMM code from another repo, kept locally as a reference/template for hmm_gaussian_functions.R
+hmm_functions.R
