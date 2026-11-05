@@ -167,10 +167,11 @@ test_idx_in_full <- full_dates >= cutoff_date
 stopifnot(sum(test_idx_in_full) == nrow(test))
 
 get_hmm_test_set_scaled_log_likelihood <- function(fit) {
-    ## fit$mu is left as-is (the initial-state distribution EM estimated for the very first
-    ## observation of the training set): the forward pass starts there and filters continuously
-    ## through the full history, so by the time it reaches the test set ~40 years later, the belief
-    ## is driven by the intervening data, not by this initial condition.
+    ## fit$mu is left as-is (the stationary distribution of the fitted P, used as the initial-state
+    ## distribution for the very first observation of the training set): the forward pass starts
+    ## there and filters continuously through the full history, so by the time it reaches the test
+    ## set ~40 years later, the belief is driven by the intervening data, not by this initial
+    ## condition.
     full_c <- baum_welch_gaussian_time_homogeneous(list(y=full_log_returns), fit)$c
     return(mean(log(full_c[test_idx_in_full])))
 }

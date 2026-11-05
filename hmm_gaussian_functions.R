@@ -37,7 +37,8 @@ get_random_initial_parameters_gaussian <- function(n_components, y, diag_min=0.9
     ## Random initial parameters for Gaussian HMM EM. Following the recipe in van Handel's notes
     ## sec. 6.3 (GE stock example): initialize P close to the identity, since we don't expect the
     ## regime to switch on a daily basis, and spread the initial (m, v) around the empirical
-    ## quantiles/variance of y.
+    ## quantiles/variance of y. The initial-state distribution mu is set to P's stationary
+    ## distribution (see the mu_update argument of get_em_estimates_gaussian_time_homogeneous).
     stopifnot(0 < diag_min && diag_min < diag_max && diag_max < 1)
     y_no_na <- y[!is.na(y)]
 
@@ -49,8 +50,7 @@ get_random_initial_parameters_gaussian <- function(n_components, y, diag_min=0.9
         diag(P) <- random_uniform
     }
 
-    mu <- runif(n_components)
-    mu <- mu / sum(mu)
+    mu <- get_stationary_distribution(P)
 
     m <- as.numeric(quantile(y_no_na, probs=seq(0, 1, length.out=n_components + 2))[seq(2, n_components + 1)])
     m <- m + rnorm(n_components, sd=0.1 * sd(y_no_na))
@@ -117,19 +117,35 @@ baum_welch_gaussian_time_homogeneous <- function(panel_element, params) {
     return(list(loglik=loglik, pi=pi, pi_transition_list=pi_transition_list, c=c))
 }
 
-get_em_estimates_gaussian_time_homogeneous <- function(panel, params, max_iter, epsilon=0.001) {
+get_em_estimates_gaussian_time_homogeneous <- function(panel, params, max_iter, epsilon=0.001,
+                                                       mu_update=c("stationary", "em")) {
     ## EM for a panel of independent Gaussian-emission HMM realizations (a single log-return
     ## series is the panel=list(list(y=...)) case). Stops at max_iter or once the sup-norm
     ## distance between successive parameter estimates drops below epsilon.
+    ##
+    ## mu_update controls the initial-state distribution mu:
+    ##   "stationary" (default): mu is tied to the stationary distribution of the current P, i.e. we
+    ##     assume the regime chain has been running long before the first observation. For a single
+    ##     series, the EM M-step for mu is the smoothed posterior at k=1 -- it rests on one
+    ##     observation, collapses to a point mass, and swings between iterations along the way,
+    ##     which can dominate the sup-norm stopping distance.
+    ##   "em": the standard Baum-Welch M-step (average of the k=1 smoothed posteriors across panel
+    ##     elements). Sensible for a panel of many independent sequences.
+    ## Note that "stationary" is not an exact M-step for mu (the stationary constraint couples mu to
+    ## P), so the log-likelihood is not guaranteed to increase monotonically. mu only enters the
+    ## likelihood through the first observation, so in practice the effect is negligible.
+    mu_update <- match.arg(mu_update)
     message("starting gaussian em, time is ", Sys.time(), ", initial (m, v) are:")
     print(rbind(m=params$m, v=params$v))
 
+    if(mu_update == "stationary") params$mu <- get_stationary_distribution(params$P)
     stopifnot(valid_parameters_gaussian_time_homogeneous(params))
     observation_lengths <- vapply(panel, function(panel_element) length(panel_element$y), FUN.VALUE=1)
     stopifnot(all(observation_lengths > 1) && length(unique(observation_lengths)) == 1)
 
-    iteration <- 1
-    while(iteration <= max_iter) {
+    n_em_iterations <- 0  # Number of EM updates applied, == length(params$loglik) on return
+    converged <- FALSE
+    for(iteration in seq_len(max_iter)) {
         baum_welch_list <- lapply(panel, baum_welch_gaussian_time_homogeneous, params=params)
         panel_with_baum_welch <- Map(c, panel, baum_welch_list)
 
@@ -147,8 +163,12 @@ get_em_estimates_gaussian_time_homogeneous <- function(panel, params, max_iter, 
         stopifnot(isTRUE(all.equal(rowSums(updated_P), rep(1, params$n_components))))
 
         ## Update initial distribution over hidden state
-        mus <- lapply(baum_welch_list, function(x) x$pi[, 1])
-        updated_mu <- Reduce("+", mus) / length(panel)
+        if(mu_update == "stationary") {
+            updated_mu <- get_stationary_distribution(updated_P)
+        } else {
+            mus <- lapply(baum_welch_list, function(x) x$pi[, 1])
+            updated_mu <- Reduce("+", mus) / length(panel)
+        }
         stopifnot(isTRUE(all.equal(sum(updated_mu), 1)))
 
         ## Update per-state mean and variance (weighted MLE; careful, y can contain NAs)
@@ -190,15 +210,19 @@ get_em_estimates_gaussian_time_homogeneous <- function(panel, params, max_iter, 
         params$distance <- c(params$distance, distance)  # c(NULL, x) == x, so this works on iteration 1 too
         params$loglik <- c(params$loglik, loglik)
         params$panel_size <- length(panel)
+        n_em_iterations <- iteration
 
-        if(distance < epsilon) break
-        iteration <- iteration + 1
+        if(distance < epsilon) {
+            converged <- TRUE
+            break
+        }
         rm(panel_with_baum_welch)
         rm(baum_welch_list)
         gc()
     }
     message("done running gaussian em, time is ", Sys.time())
-    params$n_em_iterations <- iteration
+    params$n_em_iterations <- n_em_iterations
+    params$converged <- converged
     params$time_finished_em <- Sys.time()
     return(params)
 }
@@ -248,7 +272,7 @@ get_map_smoothing_path <- function(pi_matrix) {
 }
 
 fit_gaussian_hmm <- function(y, n_components, n_random_starts=5, max_iter=50, epsilon=0.001,
-                             diag_min=0.9, diag_max=0.999) {
+                             diag_min=0.9, diag_max=0.999, mu_update="stationary") {
     ## Fit a time-homogeneous Gaussian-emission HMM to a single log-return series y by EM,
     ## with n_random_starts random initializations (see get_random_initial_parameters_gaussian);
     ## returns the fit with the highest final log-likelihood.
@@ -257,7 +281,8 @@ fit_gaussian_hmm <- function(y, n_components, n_random_starts=5, max_iter=50, ep
                                     get_random_initial_parameters_gaussian(n_components, y, diag_min=diag_min, diag_max=diag_max),
                                     simplify=FALSE)
     fits <- lapply(initial_parameters, function(params) {
-        get_em_estimates_gaussian_time_homogeneous(panel, params, max_iter=max_iter, epsilon=epsilon)
+        get_em_estimates_gaussian_time_homogeneous(panel, params, max_iter=max_iter, epsilon=epsilon,
+                                                   mu_update=mu_update)
     })
     final_logliks <- sapply(fits, function(x) tail(x$loglik, 1))
     best_fit <- fits[[which.max(final_logliks)]]
@@ -267,8 +292,8 @@ fit_gaussian_hmm <- function(y, n_components, n_random_starts=5, max_iter=50, ep
 
 get_stationary_distribution <- function(P) {
     ## Stationary distribution of a time-homogeneous Markov transition matrix P (rows sum to 1):
-    ## the pi such that pi %*% P == pi. Useful as a principled hidden-state prior at the start of
-    ## an out-of-sample window, once the chain has had time to mix (see fit_gaussian_hmm() docs).
+    ## the pi such that pi %*% P == pi. Used as the initial-state distribution mu (see the
+    ## mu_update argument of get_em_estimates_gaussian_time_homogeneous).
     stopifnot(isTRUE(all.equal(rowSums(P), rep(1, nrow(P)))))
     n <- nrow(P)
     if(n == 1) return(1)
